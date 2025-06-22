@@ -1,7 +1,6 @@
 import tkinter as tk
 import random
 import time
-from pynput import keyboard
 from ui.keyboard import VirtualKeyboard
 from ui.stats import StatsPanel
 from ui.text_display import TextDisplay
@@ -45,8 +44,9 @@ class TypeTrackApp:
         self.create_widgets()
         self.reset_session()
 
-        self.listener = keyboard.Listener(on_press=self.on_key_press_global, on_release=self.on_key_release)
-        self.listener.start()
+        # Use Tkinter's native key event system for lag-free typing
+        self.root.bind('<KeyPress>', self.on_key_press_tk)
+        self.root.bind('<KeyRelease>', self.on_key_release_tk)
 
         self.root.bind('<FocusIn>', self.on_focus_in)
         self.root.bind('<FocusOut>', self.on_focus_out)
@@ -200,17 +200,16 @@ class TypeTrackApp:
             self.timer_running = False
             self.on_timer_end()
             return
-        # Only update the timer label here
+        # Only update the timer label here (no text/stats update)
         self.timer_var.set(self.format_time(self.timer_seconds_left))
         self.timer_seconds_left -= 1
         self.timer_id = self.root.after(1000, self.update_timer)
 
     def on_timer_end(self):
-        # Called once when timer expires
+        # Only update stats and text display ONCE when the timer ends
         self.stats_panel.show_checkmark()
         self.update_stats(self.session.get_wpm(), self.session.get_correct_wpm(), self.session.get_accuracy())
         self.text_display.update_text(self.session.current_text, self.session.typed_text)
-        # Optionally, unhighlight all keys
         for key in self.key_buttons:
             self.unhighlight_key(key)
 
@@ -239,66 +238,44 @@ class TypeTrackApp:
     def on_focus_out(self, event):
         self.paused = True
 
-    def on_key_press_global(self, key):
+    def on_key_press_tk(self, event):
         if self.paused:
             return
         if self.session.is_complete() or (self.timer_running and self.timer_seconds_left <= 0):
             return
-        # Handle modifier keys
-        if key in (keyboard.Key.shift, keyboard.Key.shift_l):
+        key = event.keysym
+        char = event.char
+        if key in ("Shift_L", "Shift_R"):
             self.shift_pressed = True
-            self.highlight_key("LSHIFT")
+            self.highlight_key("LSHIFT" if key == "Shift_L" else "RSHIFT")
             return
-        if key == keyboard.Key.shift_r:
-            self.shift_pressed = True
-            self.highlight_key("RSHIFT")
+        if key in ("Control_L", "Control_R"):
+            self.highlight_key("LCTRL" if key == "Control_L" else "RCTRL")
             return
-        if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l):
-            self.highlight_key("LCTRL")
+        if key in ("Alt_L", "Alt_R"):
+            self.highlight_key("LALT" if key == "Alt_L" else "RALT")
             return
-        if key == keyboard.Key.ctrl_r:
-            self.highlight_key("RCTRL")
-            return
-        if key in (keyboard.Key.alt_l,):
-            self.highlight_key("LALT")
-            return
-        if key in (keyboard.Key.alt_r, keyboard.Key.alt_gr):
-            self.highlight_key("RALT")
-            return
-        if key == keyboard.Key.caps_lock:
+        if key == "Caps_Lock":
             self.caps_lock_active = not self.caps_lock_active
             self.highlight_key("CAPS LOCK")
             return
-        try:
-            char = None
-            if hasattr(key, "char") and key.char:
-                char = key.char
-            elif key == keyboard.Key.space:
-                char = " "
-            elif key == keyboard.Key.enter:
-                char = "\n"
-            elif key == keyboard.Key.backspace:
-                self.session.backspace()
-                self.highlight_key("BACKSPACE")
-                self.update_text_display()
-                return
-            else:
-                special_keys = {
-                    keyboard.Key.tab: "TAB",
-                }
-                if key in special_keys:
-                    self.highlight_key(special_keys[key])
-                return
-            if char is not None:
-                self.session.add_char(char)
-                self.highlight_key(char.upper() if char != " " else " ")
-        except AttributeError:
+        if key == "BackSpace":
+            self.session.backspace()
+            self.highlight_key("BACKSPACE")
+            self.update_text_display()
             return
+        if key == "Tab":
+            self.highlight_key("TAB")
+            return
+        if key == "Return":
+            char = "\n"
+        if char:
+            self.session.add_char(char)
+            self.highlight_key(char.upper() if char != " " else " ")
         self.update_text_display()
         gross_wpm, accuracy = self.session.get_stats()
         correct_wpm = self.session.get_correct_only_wpm()
         self.update_stats(gross_wpm, correct_wpm, accuracy)
-        # Unhighlight last and previous key if session is complete or timer expired
         if (self.session.is_complete() or (self.timer_running and self.timer_seconds_left <= 0)) and self.session.typed_text:
             last_char = self.session.typed_text[-1]
             self.unhighlight_key(last_char.upper() if last_char != " " else " ")
@@ -309,45 +286,29 @@ class TypeTrackApp:
         else:
             self.stats_panel.hide_checkmark()
 
-    def on_key_release(self, key):
+    def on_key_release_tk(self, event):
         if self.paused:
             return
-        # Prevent further stats update if session is complete
         if self.session.is_complete():
             return
-        # Handle modifier keys
-        if key in (keyboard.Key.shift, keyboard.Key.shift_l):
+        key = event.keysym
+        if key in ("Shift_L", "Shift_R"):
             self.shift_pressed = False
-            self.unhighlight_key("LSHIFT")
-        if key == keyboard.Key.shift_r:
-            self.shift_pressed = False
-            self.unhighlight_key("RSHIFT")
-        if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l):
-            self.unhighlight_key("LCTRL")
-        if key == keyboard.Key.ctrl_r:
-            self.unhighlight_key("RCTRL")
-        if key in (keyboard.Key.alt_l,):
-            self.unhighlight_key("LALT")
-        if key in (keyboard.Key.alt_r, keyboard.Key.alt_gr):
-            self.unhighlight_key("RALT")
-        try:
-            char = None
-            if hasattr(key, "char") and key.char:
-                char = key.char.upper()
-            elif key == keyboard.Key.space:
-                char = " "
-            else:
-                special_keys = {
-                    keyboard.Key.enter: "ENTER",
-                    keyboard.Key.backspace: "BACKSPACE",
-                    keyboard.Key.tab: "TAB",
-                    keyboard.Key.caps_lock: "CAPS LOCK",
-                }
-                char = special_keys.get(key, None)
-            if char:
-                self.unhighlight_key(char)
-        except AttributeError:
-            pass
+            self.unhighlight_key("LSHIFT" if key == "Shift_L" else "RSHIFT")
+        if key in ("Control_L", "Control_R"):
+            self.unhighlight_key("LCTRL" if key == "Control_L" else "RCTRL")
+        if key in ("Alt_L", "Alt_R"):
+            self.unhighlight_key("LALT" if key == "Alt_L" else "RALT")
+        if key == "Caps_Lock":
+            self.unhighlight_key("CAPS LOCK")
+        if key == "BackSpace":
+            self.unhighlight_key("BACKSPACE")
+        if key == "Tab":
+            self.unhighlight_key("TAB")
+        if key == "Return":
+            self.unhighlight_key("ENTER")
+        if event.char:
+            self.unhighlight_key(event.char.upper() if event.char != " " else " ")
 
     def highlight_key(self, key_id):
         if key_id in self.key_buttons:
