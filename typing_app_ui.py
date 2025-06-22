@@ -8,6 +8,9 @@ from ui.key_events import KeyEventHandler
 from ui.keyboard_container import KeyboardContainer
 from logic.session import TypingSession
 from data.practice_texts import LETTER_PRACTICE_SENTENCES, PRACTICE_SENTENCES, FIVE_MINUTE_TEXT
+from ui.key_highlight import highlight_key, unhighlight_key
+from ui.responsive import setup_responsive_ui
+from ui.titlebar import create_titlebar
 
 class TypeTrackApp:
     def __init__(self, root):
@@ -45,18 +48,11 @@ class TypeTrackApp:
         content_frame.grid_rowconfigure(2, weight=1)
         content_frame.grid_columnconfigure(0, weight=1)
 
-        title_frame = tk.Frame(content_frame, bg="#23272A", height=50)
-        title_frame.grid(row=0, column=0, sticky="ew")
-        self.stats_panel = StatsPanel(title_frame, self.wpm_var, self.correct_wpm_var, self.accuracy_var, self.keystrokes_var)
-        self.stats_panel.pack(side="left", padx=20)
-        button_frame = tk.Frame(title_frame, bg="#23272A")
-        button_frame.pack(side="right", padx=18, pady=8)
-        reset_btn = tk.Button(
-            button_frame, text="New", command=self.reset_session,
-            bg="#00acc1", fg="white", font=("Segoe UI", 11, "bold"),
-            relief="flat", padx=12, pady=4, cursor="hand2", bd=0, highlightthickness=0
+        # Title bar
+        title_frame, self.stats_panel = create_titlebar(
+            content_frame, self.wpm_var, self.correct_wpm_var, self.accuracy_var, self.keystrokes_var, self.reset_session
         )
-        reset_btn.pack()
+        title_frame.grid(row=0, column=0, sticky="ew")
 
         # Dropdowns and timer label
         self.letter_var = tk.StringVar(value="All")
@@ -193,13 +189,10 @@ class TypeTrackApp:
         self.stats_panel.hide_checkmark()
 
     def highlight_key(self, key_id):
-        if key_id in self.key_buttons:
-            self.key_buttons[key_id].configure(bg="#00c853", fg="#ffffff")
+        highlight_key(self.key_buttons, self.keyboard_container.keyboard_frame, key_id)
 
     def unhighlight_key(self, key_id):
-        if key_id in self.key_buttons:
-            color = self.keyboard_container.keyboard_frame.key_colors.get(key_id, "#23272A")
-            self.key_buttons[key_id].configure(bg=color, fg="#23272A" if color != "#23272A" else "#ffffff")
+        unhighlight_key(self.key_buttons, self.keyboard_container.keyboard_frame, key_id)
 
     # Timer delegation
     def start_timer(self):
