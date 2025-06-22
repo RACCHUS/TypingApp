@@ -11,6 +11,8 @@ from data.practice_texts import LETTER_PRACTICE_SENTENCES, PRACTICE_SENTENCES, F
 from ui.key_highlight import highlight_key, unhighlight_key
 from ui.responsive import setup_responsive_ui
 from ui.titlebar import create_titlebar
+from logic.session_control import reset_session, pause_session, resume_session
+from logic.stats_update import update_stats
 
 class TypeTrackApp:
     def __init__(self, root):
@@ -148,10 +150,10 @@ class TypeTrackApp:
         return f"{m}:{s:02d}"
 
     def reset_session(self):
-        self.session.reset()
+        reset_session(self.session)
         self.result_var.set("")
         self.text_display.update_text(self.session.current_text, self.session.typed_text)
-        self.update_stats(0, 0, 100)
+        update_stats(self, 0, 0, 100)
         self.stats_panel.hide_checkmark()
         self.timer_var.set("")
         self.timer_running = False
@@ -163,16 +165,13 @@ class TypeTrackApp:
         self.text_display.update_text(self.session.current_text, self.session.typed_text)
 
     def on_focus_in(self, event):
-        self.paused = False
+        resume_session(self)
 
     def on_focus_out(self, event):
-        self.paused = True
+        pause_session(self)
 
     def update_stats(self, wpm, correct_wpm, accuracy):
-        self.wpm_var.set(f"WPM Gross: {wpm}")
-        self.correct_wpm_var.set(f"WPM Correct: {correct_wpm}")
-        self.accuracy_var.set(f"Accuracy: {accuracy}%")
-        self.keystrokes_var.set(f"Keystrokes: {self.session.keystrokes}")
+        update_stats(self, wpm, correct_wpm, accuracy)
 
     def on_letter_select(self, value):
         if value == "All":
