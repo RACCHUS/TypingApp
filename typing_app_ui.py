@@ -7,12 +7,15 @@ from ui.timer import TimerController
 from ui.key_events import KeyEventHandler
 from ui.keyboard_container import KeyboardContainer
 from logic.session import TypingSession
-from data.practice_texts import LETTER_PRACTICE_SENTENCES, PRACTICE_SENTENCES, FIVE_MINUTE_TEXT
+from data.practice_texts import PRACTICE_SENTENCES, LETTER_PRACTICE_SENTENCES, FIVE_MINUTE_TEXT
 from ui.key_highlight import highlight_key, unhighlight_key
 from ui.responsive import setup_responsive_ui
 from ui.titlebar import create_titlebar
 from logic.session_control import reset_session, pause_session, resume_session
 from logic.stats_update import update_stats
+from logic.profile_manager import ProfileManager
+from ui.profile_selector import ProfileSelector
+from ui.stats_history_panel import StatsHistoryPanel
 
 class TypeTrackApp:
     def __init__(self, root):
@@ -35,6 +38,18 @@ class TypeTrackApp:
         self.keystrokes_var = tk.StringVar(value="Keystrokes: 0")
         self.result_var = tk.StringVar(value="")
 
+        self.profile_manager = ProfileManager()
+        # Try to load default profile or create one if none exist
+        profiles = self.profile_manager.list_profiles()
+        if profiles:
+            self.profile_manager.load_profile(profiles[0])
+        else:
+            self.profile_manager.create_profile('default')
+            self.profile_manager.load_profile('default')
+
+        self.practice_text_map = {s['text']: s['id'] for s in PRACTICE_SENTENCES}
+        self.letter_text_map = {v['text']: v['id'] for v in LETTER_PRACTICE_SENTENCES.values()}
+
         self.create_widgets()
         self.reset_session()
 
@@ -47,16 +62,24 @@ class TypeTrackApp:
     def create_widgets(self):
         content_frame = tk.Frame(self.root, bg="#181A1B")
         content_frame.pack(side="top", fill="both", expand=True)
-        content_frame.grid_rowconfigure(2, weight=1)
+        content_frame.grid_rowconfigure(3, weight=1)
         content_frame.grid_columnconfigure(0, weight=1)
 
-        # Title bar
+        # Profile selector at the very top, in its own frame
+        topbar = tk.Frame(content_frame, bg="#181A1B")
+        topbar.grid(row=0, column=0, sticky="ew")
+        self.profile_selector = ProfileSelector(
+            topbar, self.profile_manager, self.on_profile_change
+        )
+        self.profile_selector.pack(side="left", padx=8, pady=2)
+
+        # Title bar (stats and new text button) on its own row
         title_frame, self.stats_panel = create_titlebar(
             content_frame, self.wpm_var, self.correct_wpm_var, self.accuracy_var, self.keystrokes_var, self.reset_session
         )
-        title_frame.grid(row=0, column=0, sticky="ew")
+        title_frame.grid(row=1, column=0, sticky="ew")
 
-        # Dropdowns and timer label
+        # Dropdowns (practice key, test length, timer) on their own row
         self.letter_var = tk.StringVar(value="All")
         self.test_time_var = tk.StringVar(value="None")
         self.timer_var = tk.StringVar(value="")
@@ -66,25 +89,33 @@ class TypeTrackApp:
             self.on_letter_select, self.on_test_time_select,
             self.timer_var, self.timer_label
         )
+        self.dropdowns.get_frame().grid(row=2, column=0, sticky="ew", pady=(8, 0))
 
+        # Heading and text display below
         heading = tk.Label(
             content_frame, text="Type the sentence below:",
             bg="#181A1B", fg="#ffffff", font=("Segoe UI", 16, "bold")
         )
-        heading.grid(row=2, column=0, pady=(18, 8), sticky="ew")
+        heading.grid(row=3, column=0, pady=(18, 8), sticky="ew")
         self.heading = heading
 
         self.text_display = TextDisplay(content_frame)
-        self.text_display.grid(row=3, column=0, padx=30, pady=5, sticky="nsew")
+        self.text_display.grid(row=4, column=0, padx=30, pady=5, sticky="nsew")
 
         self.keyboard_container = KeyboardContainer(content_frame, self.key_buttons)
-        self.keyboard_container.grid(row=4, column=0, pady=18)
+        self.keyboard_container.grid(row=5, column=0, pady=18)
 
         # Timer controller
         self.timer_controller = TimerController(self.root, self.timer_var, self.on_timer_end)
         self.timer_running = False
         self.timer_seconds_left = 0
         self.timer_id = None
+
+        # Place stats/history panel on the right side, make it even smaller
+        self.stats_history_panel = StatsHistoryPanel(content_frame, self.profile_manager, bg="#23272A", width=170, height=160)
+        self.stats_history_panel.grid(row=4, column=1, rowspan=2, sticky="ne", padx=(4, 4), pady=(8, 8))
+        self.stats_history_panel.grid_propagate(False)
+        content_frame.grid_columnconfigure(1, minsize=170, weight=0)
 
         # Responsive UI logic (unchanged)
         def hide_heading_on_resize(event=None):
@@ -126,7 +157,7 @@ class TypeTrackApp:
         if self.timer_id:
             self.root.after_cancel(self.timer_id)
         # Use the long text for all timed tests
-        self.session.current_text = FIVE_MINUTE_TEXT
+        self.session.current_text = FIVE_MINUTE_TEXT['text']
         self.session.typed_text = ""
         self.session.start_time = None
         self.session.keystrokes = 0
@@ -144,6 +175,18 @@ class TypeTrackApp:
         self.text_display.update_text(self.session.current_text, self.session.typed_text)
         for key in self.key_buttons:
             self.unhighlight_key(key)
+        # Record stats to profile after each race
+        wpm, accuracy = self.session.get_stats()
+        correct_wpm = self.session.get_correct_only_wpm()
+        text = self.session.current_text
+        text_id = None
+        if text == FIVE_MINUTE_TEXT['text']:
+            text_id = FIVE_MINUTE_TEXT['id']
+        else:
+            text_id = self.practice_text_map.get(text) or self.letter_text_map.get(text) or "custom"
+        self.profile_manager.record_race(text_id, wpm, correct_wpm, accuracy)
+        # Update stats/history panel after each race (after recording)
+        self.stats_history_panel.update_stats()
 
     def format_time(self, seconds):
         m, s = divmod(seconds, 60)
@@ -163,6 +206,18 @@ class TypeTrackApp:
 
     def update_text_display(self):
         self.text_display.update_text(self.session.current_text, self.session.typed_text)
+        # If the session is complete (untimed mode), record stats and update panel
+        if self.session.is_complete() and self.session.typed_text:
+            wpm, accuracy = self.session.get_stats()
+            correct_wpm = self.session.get_correct_only_wpm()
+            text = self.session.current_text
+            text_id = None
+            if text == FIVE_MINUTE_TEXT['text']:
+                text_id = FIVE_MINUTE_TEXT['id']
+            else:
+                text_id = self.practice_text_map.get(text) or self.letter_text_map.get(text) or "custom"
+            self.profile_manager.record_race(text_id, wpm, correct_wpm, accuracy)
+            self.stats_history_panel.update_stats()
 
     def on_focus_in(self, event):
         resume_session(self)
@@ -175,9 +230,11 @@ class TypeTrackApp:
 
     def on_letter_select(self, value):
         if value == "All":
-            self.session.current_text = random.choice(PRACTICE_SENTENCES)
+            s = random.choice(PRACTICE_SENTENCES)
+            self.session.current_text = s['text']
         else:
-            self.session.current_text = LETTER_PRACTICE_SENTENCES.get(value, "")
+            s = LETTER_PRACTICE_SENTENCES.get(value)
+            self.session.current_text = s['text'] if s else ""
         self.session.typed_text = ""
         self.session.start_time = None
         self.session.keystrokes = 0
@@ -201,3 +258,7 @@ class TypeTrackApp:
     def stop_timer(self):
         self.timer_running = False
         self.timer_controller.stop()
+
+    def on_profile_change(self):
+        # Update stats/history panel when profile changes
+        self.stats_history_panel.update_stats()

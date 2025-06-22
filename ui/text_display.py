@@ -27,6 +27,9 @@ class TextDisplay(tk.Text):
         self.configure(font=("Consolas", new_size))
 
     def update_text(self, current_text, typed_text):
+        # If current_text is a dict (with 'text' key), extract the text
+        if isinstance(current_text, dict) and 'text' in current_text:
+            current_text = current_text['text']
         self.configure(state="normal")
         self.delete("1.0", tk.END)
 
