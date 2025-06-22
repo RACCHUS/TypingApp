@@ -1,0 +1,3 @@
+# No external dependencies required for TypingApp
+# Tkinter is included with standard Python installations (python >= 3.4)
+# If you add third-party packages, list them below (one per line)

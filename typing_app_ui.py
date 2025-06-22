@@ -156,7 +156,7 @@ class TypeTrackApp:
         self.timer_running = False
         if self.timer_id:
             self.root.after_cancel(self.timer_id)
-        # Use the long text for all timed tests
+        # Use the long text for all timed tests (set to string, not dict)
         self.session.current_text = FIVE_MINUTE_TEXT['text']
         self.session.typed_text = ""
         self.session.start_time = None
@@ -211,7 +211,7 @@ class TypeTrackApp:
             wpm, accuracy = self.session.get_stats()
             correct_wpm = self.session.get_correct_only_wpm()
             text = self.session.current_text
-            text_id = None
+            # Only use dict logic for timed test (FIVE_MINUTE_TEXT)
             if text == FIVE_MINUTE_TEXT['text']:
                 text_id = FIVE_MINUTE_TEXT['id']
             else:

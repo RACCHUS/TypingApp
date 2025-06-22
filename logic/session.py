@@ -12,7 +12,11 @@ class TypingSession:
         self.reset()
 
     def reset(self):
-        self.current_text = random.choice(self.sentences)
+        s = random.choice(self.sentences)
+        if isinstance(s, dict) and 'text' in s:
+            self.current_text = s['text']
+        else:
+            self.current_text = s
         self.typed_text = ""
         self.start_time = None
         self.keystrokes = 0
